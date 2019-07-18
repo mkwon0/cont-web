@@ -1,0 +1,89 @@
+version: '2.4'
+
+services:
+
+  database:
+    image: mysql:8.0.16
+    labels: # allow docker-autoheal to restart if unhealthy
+      autoheal: "true"
+    networks:
+      - app-network1
+    volumes:
+      - /mnt/nvme1n1/my.cnf:/etc/mysql/my.cnf
+      - /mnt/nvme1n1/db-data1/:/var/lib/mysql/
+      - /mnt/nvme1n1/db-init1/:/docker-entrypoint-initdb.d/
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_DATABASE=tpcc_bench
+      - MYSQL_USER=test
+      - MYSQL_PASSWORD=testpassword
+    ports:
+      - "3307:3306"
+    mem_limit: 144MB
+    memswap_limit: -1
+    mem_swappiness: 100
+    oom_kill_disable: true
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      interval: 2s
+      retries: 10
+
+  php:
+    build:
+      context: /mnt/nvme1n1
+      dockerfile: /mnt/nvme1n1/Dockerfile
+    labels: # allow docker-autoheal to restart if unhealthy
+      autoheal: "true"
+    volumes:
+      - /mnt/nvme1n1/webpage1/:/srv/www/api/
+      - /mnt/nvme1n1/php1.conf:/usr/local/etc/php-fpm.d/www.conf
+      - /mnt/nvme1n1/php-log1/:/var/log/php-fpm/
+    environment:
+      - MYSQL_USER=test
+      - MYSQL_PASSWORD=testpassword
+      - MYSQL_DATABASE=tpcc_bench
+    networks:
+      - app-network1
+    mem_limit: 25MB
+    memswap_limit: -1
+    mem_swappiness: 100
+    oom_kill_disable: true
+    healthcheck:
+      test: pidof php-fpm
+      timeout: 45s
+      interval: 10s
+      retries: 10
+
+  nginx:
+    image: nginx:1.17.1
+    labels: # allow docker-autoheal to restart if unhealthy
+      autoheal: "true"
+    ports:
+      - "8080:80"
+    volumes:
+      - /mnt/nvme1n1/webpage1/:/srv/www/api/
+      - /mnt/nvme1n1/nginx1.conf:/etc/nginx/nginx.conf
+      - /mnt/nvme1n1/nginx-log1/:/var/log/nginx/
+    networks:
+      - app-network1
+    command: ["nginx", "-g", "daemon off;"]
+    mem_limit: 24MB
+    memswap_limit: -1
+    mem_swappiness: 100
+    oom_kill_disable: true
+    healthcheck:
+      test: ["CMD", "service", "nginx", "status"]
+
+  autoheal:
+    image: willfarrell/autoheal
+    restart: always
+    environment:
+      - AUTOHEAL_CONTAINER_LABEL=all
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+# Docker Networks
+networks:
+  app-network1:
+    driver: bridge
